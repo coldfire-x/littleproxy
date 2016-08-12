@@ -25,13 +25,7 @@ import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.GenericFutureListener;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
-import org.littleshoot.proxy.ActivityTracker;
-import org.littleshoot.proxy.FlowContext;
-import org.littleshoot.proxy.FullFlowContext;
-import org.littleshoot.proxy.HttpFilters;
-import org.littleshoot.proxy.HttpFiltersAdapter;
-import org.littleshoot.proxy.ProxyAuthenticator;
-import org.littleshoot.proxy.SslEngineSource;
+import org.littleshoot.proxy.*;
 
 import javax.net.ssl.SSLSession;
 import java.io.IOException;
@@ -1416,7 +1410,11 @@ public class ClientToProxyConnection extends ProxyConnection<HttpRequest> {
             FlowContext flowContext = flowContext();
             for (ActivityTracker tracker : proxyServer
                     .getActivityTrackers()) {
-                tracker.requestReceivedFromClient(flowContext, httpRequest);
+
+                DomainRecordFilterImp f = proxyServer.getDomains_recording_filter();
+                if (f == null || f.shouldRecord(httpRequest)) {
+                    tracker.requestReceivedFromClient(flowContext, httpRequest);
+                }
             }
         }
     };
@@ -1438,8 +1436,11 @@ public class ClientToProxyConnection extends ProxyConnection<HttpRequest> {
             FlowContext flowContext = flowContext();
             for (ActivityTracker tracker : proxyServer
                     .getActivityTrackers()) {
-                tracker.responseSentToClient(flowContext,
-                        httpResponse);
+
+                DomainRecordFilterImp f = proxyServer.getDomains_recording_filter();
+                if (f == null || f.shouldRecord(currentServerConnection)) {
+                    tracker.responseSentToClient(flowContext, httpResponse);
+                }
             }
         }
     };

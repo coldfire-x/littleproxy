@@ -17,21 +17,7 @@ import io.netty.channel.udt.nio.NioUdtProvider;
 import io.netty.handler.traffic.GlobalTrafficShapingHandler;
 import io.netty.util.concurrent.GlobalEventExecutor;
 import org.apache.commons.io.IOUtils;
-import org.littleshoot.proxy.ActivityTracker;
-import org.littleshoot.proxy.ChainedProxyManager;
-import org.littleshoot.proxy.DefaultHostResolver;
-import org.littleshoot.proxy.DnsSecServerResolver;
-import org.littleshoot.proxy.HostResolver;
-import org.littleshoot.proxy.HttpFilters;
-import org.littleshoot.proxy.HttpFiltersSource;
-import org.littleshoot.proxy.HttpFiltersSourceAdapter;
-import org.littleshoot.proxy.HttpProxyServer;
-import org.littleshoot.proxy.HttpProxyServerBootstrap;
-import org.littleshoot.proxy.MitmManager;
-import org.littleshoot.proxy.ProxyAuthenticator;
-import org.littleshoot.proxy.SslEngineSource;
-import org.littleshoot.proxy.TransportProtocol;
-import org.littleshoot.proxy.UnknownTransportProtocolException;
+import org.littleshoot.proxy.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -110,6 +96,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
     private volatile int idleConnectionTimeout;
     private final HostResolver serverResolver;
     private volatile GlobalTrafficShapingHandler globalTrafficShapingHandler;
+    private DomainRecordFilterImp domains_recording_filter;
 
     /**
      * The alias or pseudonym for this proxy, used when adding the Via header.
@@ -240,7 +227,8 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
             long readThrottleBytesPerSecond,
             long writeThrottleBytesPerSecond,
             InetSocketAddress localAddress,
-            String proxyAlias) {
+            String proxyAlias,
+            DomainRecordFilterImp domains_recording_filter) {
         this.serverGroup = serverGroup;
         this.transportProtocol = transportProtocol;
         this.requestedAddress = requestedAddress;
@@ -275,6 +263,8 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         } else {
             this.proxyAlias = proxyAlias;
         }
+
+        this.domains_recording_filter = domains_recording_filter;
     }
 
     /**
@@ -525,6 +515,8 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         Runtime.getRuntime().addShutdownHook(jvmShutdownHook);
     }
 
+    protected DomainRecordFilterImp getDomains_recording_filter() { return domains_recording_filter;}
+
     protected ChainedProxyManager getChainProxyManager() {
         return chainProxyManager;
     }
@@ -584,6 +576,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         private int clientToProxyAcceptorThreads = ServerGroup.DEFAULT_INCOMING_ACCEPTOR_THREADS;
         private int clientToProxyWorkerThreads = ServerGroup.DEFAULT_INCOMING_WORKER_THREADS;
         private int proxyToServerWorkerThreads = ServerGroup.DEFAULT_OUTGOING_WORKER_THREADS;
+        private DomainRecordFilterImp domains_recording_filter;
 
         private DefaultHttpProxyServerBootstrap() {
         }
@@ -637,6 +630,9 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
                     "idle_connection_timeout");
             this.connectTimeout = ProxyUtils.extractInt(props,
                     "connect_timeout", 0);
+
+            this.domains_recording_filter = new DomainRecordFilterImp();
+            this.domains_recording_filter.addDomain(props.getProperty("domains_require_recording", ""));
         }
 
         @Override
@@ -825,7 +821,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
                     filtersSource, transparent,
                     idleConnectionTimeout, activityTrackers, connectTimeout,
                     serverResolver, readThrottleBytesPerSecond, writeThrottleBytesPerSecond,
-                    localAddress, proxyAlias);
+                    localAddress, proxyAlias, domains_recording_filter);
         }
 
         private InetSocketAddress determineListenAddress() {
