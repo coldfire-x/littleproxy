@@ -319,6 +319,14 @@
                 <artifactId>netty-example</artifactId>
                 <version>${netty.version}</version>
             </dependency>
+
+            <!-- https://mvnrepository.com/artifact/org.mongodb/mongo-java-driver -->
+            <dependency>
+                <groupId>org.mongodb</groupId>
+                <artifactId>mongo-java-driver</artifactId>
+                <version>3.3.0</version>
+            </dependency>
+
         </dependencies>
     </dependencyManagement>
 
