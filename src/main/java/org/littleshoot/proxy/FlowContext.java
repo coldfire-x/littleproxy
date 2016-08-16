@@ -16,13 +16,19 @@ import org.littleshoot.proxy.impl.ClientToProxyConnection;
 public class FlowContext {
     private final InetSocketAddress clientAddress;
     private final SSLSession clientSslSession;
+    protected final ClientToProxyConnection cTopConnection;
 
     public FlowContext(ClientToProxyConnection clientConnection) {
         super();
+        this.cTopConnection = clientConnection;
         this.clientAddress = clientConnection.getClientAddress();
         SSLEngine sslEngine = clientConnection.getSslEngine();
         this.clientSslSession = sslEngine != null ? sslEngine.getSession()
                 : null;
+    }
+
+    public ClientToProxyConnection getcTopConnection() {
+        return cTopConnection;
     }
 
     /**

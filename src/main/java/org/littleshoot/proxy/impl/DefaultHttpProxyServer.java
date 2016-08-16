@@ -1,5 +1,7 @@
 package org.littleshoot.proxy.impl;
 
+import com.mongodb.client.MongoCollection;
+import com.sun.xml.internal.xsom.impl.scd.Iterators;
 import io.netty.bootstrap.ChannelFactory;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
@@ -21,14 +23,18 @@ import org.littleshoot.proxy.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.mongodb.MongoClient;
+import com.mongodb.DB;
+import com.mongodb.DBCollection;
+import com.mongodb.ServerAddress;
+
 import javax.net.ssl.SSLEngine;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
-import java.util.Collection;
-import java.util.Properties;
+import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -37,13 +43,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>
  * Primary implementation of an {@link HttpProxyServer}.
  * </p>
- *
+ * <p/>
  * <p>
  * {@link DefaultHttpProxyServer} is bootstrapped by calling
  * {@link #bootstrap()} or {@link #bootstrapFromFile(String)}, and then calling
  * {@link DefaultHttpProxyServerBootstrap#start()}. For example:
  * </p>
- *
+ * <p/>
  * <pre>
  * DefaultHttpProxyServer server =
  *         DefaultHttpProxyServer
@@ -51,7 +57,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *                 .withPort(8090)
  *                 .start();
  * </pre>
- *
  */
 public class DefaultHttpProxyServer implements HttpProxyServer {
     private static final Logger LOG = LoggerFactory.getLogger(DefaultHttpProxyServer.class);
@@ -97,6 +102,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
     private final HostResolver serverResolver;
     private volatile GlobalTrafficShapingHandler globalTrafficShapingHandler;
     private DomainRecordFilterImp domains_recording_filter;
+    private DBCollection mc;
 
     /**
      * The alias or pseudonym for this proxy, used when adding the Via header.
@@ -167,68 +173,52 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
     /**
      * Creates a new proxy server.
      *
-     * @param serverGroup
-     *            our ServerGroup for shared thread pools and such
-     * @param transportProtocol
-     *            The protocol to use for data transport
-     * @param requestedAddress
-     *            The address on which this server will listen
-     * @param sslEngineSource
-     *            (optional) if specified, this Proxy will encrypt inbound
-     *            connections from clients using an {@link SSLEngine} obtained
-     *            from this {@link SslEngineSource}.
-     * @param authenticateSslClients
-     *            Indicate whether or not to authenticate clients when using SSL
-     * @param proxyAuthenticator
-     *            (optional) If specified, requests to the proxy will be
-     *            authenticated using HTTP BASIC authentication per the provided
-     *            {@link ProxyAuthenticator}
-     * @param chainProxyManager
-     *            The proxy to send requests to if chaining proxies. Typically
-     *            <code>null</code>.
-     * @param mitmManager
-     *            The {@link MitmManager} to use for man in the middle'ing
-     *            CONNECT requests
-     * @param filtersSource
-     *            Source for {@link HttpFilters}
-     * @param transparent
-     *            If true, this proxy will run as a transparent proxy. This will
-     *            not modify the response, and will only modify the request to
-     *            amend the URI if the target is the origin server (to comply
-     *            with RFC 7230 section 5.3.1).
-     * @param idleConnectionTimeout
-     *            The timeout (in seconds) for auto-closing idle connections.
-     * @param activityTrackers
-     *            for tracking activity on this proxy
-     * @param connectTimeout
-     *            number of milliseconds to wait to connect to the upstream
-     *            server
-     * @param serverResolver
-     *            the {@link HostResolver} to use for resolving server addresses
-     * @param readThrottleBytesPerSecond
-     *            read throttle bandwidth
-     * @param writeThrottleBytesPerSecond
-     *            write throttle bandwidth
+     * @param serverGroup                 our ServerGroup for shared thread pools and such
+     * @param transportProtocol           The protocol to use for data transport
+     * @param requestedAddress            The address on which this server will listen
+     * @param sslEngineSource             (optional) if specified, this Proxy will encrypt inbound
+     *                                    connections from clients using an {@link SSLEngine} obtained
+     *                                    from this {@link SslEngineSource}.
+     * @param authenticateSslClients      Indicate whether or not to authenticate clients when using SSL
+     * @param proxyAuthenticator          (optional) If specified, requests to the proxy will be
+     *                                    authenticated using HTTP BASIC authentication per the provided
+     *                                    {@link ProxyAuthenticator}
+     * @param chainProxyManager           The proxy to send requests to if chaining proxies. Typically
+     *                                    <code>null</code>.
+     * @param mitmManager                 The {@link MitmManager} to use for man in the middle'ing
+     *                                    CONNECT requests
+     * @param filtersSource               Source for {@link HttpFilters}
+     * @param transparent                 If true, this proxy will run as a transparent proxy. This will
+     *                                    not modify the response, and will only modify the request to
+     *                                    amend the URI if the target is the origin server (to comply
+     *                                    with RFC 7230 section 5.3.1).
+     * @param idleConnectionTimeout       The timeout (in seconds) for auto-closing idle connections.
+     * @param activityTrackers            for tracking activity on this proxy
+     * @param connectTimeout              number of milliseconds to wait to connect to the upstream
+     *                                    server
+     * @param serverResolver              the {@link HostResolver} to use for resolving server addresses
+     * @param readThrottleBytesPerSecond  read throttle bandwidth
+     * @param writeThrottleBytesPerSecond write throttle bandwidth
      */
     private DefaultHttpProxyServer(ServerGroup serverGroup,
-            TransportProtocol transportProtocol,
-            InetSocketAddress requestedAddress,
-            SslEngineSource sslEngineSource,
-            boolean authenticateSslClients,
-            ProxyAuthenticator proxyAuthenticator,
-            ChainedProxyManager chainProxyManager,
-            MitmManager mitmManager,
-            HttpFiltersSource filtersSource,
-            boolean transparent,
-            int idleConnectionTimeout,
-            Collection<ActivityTracker> activityTrackers,
-            int connectTimeout,
-            HostResolver serverResolver,
-            long readThrottleBytesPerSecond,
-            long writeThrottleBytesPerSecond,
-            InetSocketAddress localAddress,
-            String proxyAlias,
-            DomainRecordFilterImp domains_recording_filter) {
+                                   TransportProtocol transportProtocol,
+                                   InetSocketAddress requestedAddress,
+                                   SslEngineSource sslEngineSource,
+                                   boolean authenticateSslClients,
+                                   ProxyAuthenticator proxyAuthenticator,
+                                   ChainedProxyManager chainProxyManager,
+                                   MitmManager mitmManager,
+                                   HttpFiltersSource filtersSource,
+                                   boolean transparent,
+                                   int idleConnectionTimeout,
+                                   Collection<ActivityTracker> activityTrackers,
+                                   int connectTimeout,
+                                   HostResolver serverResolver,
+                                   long readThrottleBytesPerSecond,
+                                   long writeThrottleBytesPerSecond,
+                                   InetSocketAddress localAddress,
+                                   String proxyAlias,
+                                   DomainRecordFilterImp domains_recording_filter, DBCollection mc) {
         this.serverGroup = serverGroup;
         this.transportProtocol = transportProtocol;
         this.requestedAddress = requestedAddress;
@@ -265,6 +255,11 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         }
 
         this.domains_recording_filter = domains_recording_filter;
+        this.mc = mc;
+    }
+
+    public DBCollection getMc() {
+        return mc;
     }
 
     /**
@@ -273,7 +268,6 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
      * @param transportProtocol
      * @param readThrottleBytesPerSecond
      * @param writeThrottleBytesPerSecond
-     *
      * @return
      */
     private GlobalTrafficShapingHandler createGlobalTrafficShapingHandler(TransportProtocol transportProtocol, long readThrottleBytesPerSecond, long writeThrottleBytesPerSecond) {
@@ -348,21 +342,21 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
                 transportProtocol,
                 new InetSocketAddress(requestedAddress.getAddress(),
                         requestedAddress.getPort() == 0 ? 0 : requestedAddress.getPort() + 1),
-                    sslEngineSource,
-                    authenticateSslClients,
-                    proxyAuthenticator,
-                    chainProxyManager,
-                    mitmManager,
-                    filtersSource,
-                    transparent,
-                    idleConnectionTimeout,
-                    activityTrackers,
-                    connectTimeout,
-                    serverResolver,
-                    globalTrafficShapingHandler != null ? globalTrafficShapingHandler.getReadLimit() : 0,
-                    globalTrafficShapingHandler != null ? globalTrafficShapingHandler.getWriteLimit() : 0,
-                    localAddress,
-                    proxyAlias);
+                sslEngineSource,
+                authenticateSslClients,
+                proxyAuthenticator,
+                chainProxyManager,
+                mitmManager,
+                filtersSource,
+                transparent,
+                idleConnectionTimeout,
+                activityTrackers,
+                connectTimeout,
+                serverResolver,
+                globalTrafficShapingHandler != null ? globalTrafficShapingHandler.getReadLimit() : 0,
+                globalTrafficShapingHandler != null ? globalTrafficShapingHandler.getWriteLimit() : 0,
+                localAddress,
+                proxyAlias);
     }
 
     @Override
@@ -471,7 +465,9 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
                         authenticateSslClients,
                         ch.pipeline(),
                         globalTrafficShapingHandler);
-            };
+            }
+
+            ;
         };
         switch (transportProtocol) {
             case TCP:
@@ -515,7 +511,9 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         Runtime.getRuntime().addShutdownHook(jvmShutdownHook);
     }
 
-    protected DomainRecordFilterImp getDomains_recording_filter() { return domains_recording_filter;}
+    protected DomainRecordFilterImp getDomains_recording_filter() {
+        return domains_recording_filter;
+    }
 
     protected ChainedProxyManager getChainProxyManager() {
         return chainProxyManager;
@@ -577,6 +575,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
         private int clientToProxyWorkerThreads = ServerGroup.DEFAULT_INCOMING_WORKER_THREADS;
         private int proxyToServerWorkerThreads = ServerGroup.DEFAULT_OUTGOING_WORKER_THREADS;
         private DomainRecordFilterImp domains_recording_filter;
+        private DBCollection mc; // mongodb collection
 
         private DefaultHttpProxyServerBootstrap() {
         }
@@ -595,7 +594,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
                 Collection<ActivityTracker> activityTrackers,
                 int connectTimeout, HostResolver serverResolver,
                 long readThrottleBytesPerSecond,
-                long  writeThrottleBytesPerSecond,
+                long writeThrottleBytesPerSecond,
                 InetSocketAddress localAddress,
                 String proxyAlias) {
             this.serverGroup = serverGroup;
@@ -621,6 +620,41 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
             this.proxyAlias = proxyAlias;
         }
 
+        private DBCollection init_mongodb_col(String host, String dbname, String colname) {
+            MongoClient mongoclient;
+
+            String ss = host.trim();
+            if (ss == "") {
+                ss = "localhost";
+            }
+
+            Vector<String> host_port_pairs = new Vector<String>();
+            if (ss.contains(",")) {
+                String[] pairs = ss.split(",");
+                ServerAddress[] addresses = new ServerAddress[pairs.length];
+                for (int i=0; i < pairs.length; i++) {
+                    if (pairs[i].contains(":")) {
+                        String[] addrs = ss.split(":");
+                        addresses[i] = new ServerAddress(addrs[0], Integer.parseInt(addrs[1]));
+                    } else {
+                        addresses[i] = new ServerAddress(pairs[i]);
+                    }
+                }
+                mongoclient =  new MongoClient(Arrays.asList(addresses));
+            } else {
+                // only one host:port pair
+                if (ss.contains(":")) {
+                    String[] addrs = ss.split(":");
+                    mongoclient = new MongoClient(addrs[0], Integer.parseInt(addrs[1]));
+                } else {
+                    mongoclient = new MongoClient(ss);
+                }
+            }
+
+            DB db = mongoclient.getDB(dbname);
+            return db.getCollection(colname);
+        }
+
         private DefaultHttpProxyServerBootstrap(Properties props) {
             this.withUseDnsSec(ProxyUtils.extractBooleanDefaultFalse(
                     props, "dnssec"));
@@ -633,6 +667,12 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
 
             this.domains_recording_filter = new DomainRecordFilterImp();
             this.domains_recording_filter.addDomain(props.getProperty("domains_require_recording", ""));
+
+            this.mc = init_mongodb_col(
+                    props.getProperty("mongodb_servers"),
+                    props.getProperty("mongodb_dbname"),
+                    props.getProperty("mongodb_colname")
+            );
         }
 
         @Override
@@ -809,8 +849,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
 
             if (this.serverGroup != null) {
                 serverGroup = this.serverGroup;
-            }
-            else {
+            } else {
                 serverGroup = new ServerGroup(name, clientToProxyAcceptorThreads, clientToProxyWorkerThreads, proxyToServerWorkerThreads);
             }
 
@@ -821,7 +860,7 @@ public class DefaultHttpProxyServer implements HttpProxyServer {
                     filtersSource, transparent,
                     idleConnectionTimeout, activityTrackers, connectTimeout,
                     serverResolver, readThrottleBytesPerSecond, writeThrottleBytesPerSecond,
-                    localAddress, proxyAlias, domains_recording_filter);
+                    localAddress, proxyAlias, domains_recording_filter, mc);
         }
 
         private InetSocketAddress determineListenAddress() {

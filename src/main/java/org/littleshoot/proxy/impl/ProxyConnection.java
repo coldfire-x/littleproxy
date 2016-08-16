@@ -98,6 +98,10 @@ abstract class ProxyConnection<I extends HttpObject> extends
         this.runsAsSslClient = runsAsSslClient;
     }
 
+    public DefaultHttpProxyServer getProxyServer() {
+        return proxyServer;
+    }
+
     /***************************************************************************
      * Reading
      **************************************************************************/

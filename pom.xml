@@ -91,6 +91,12 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongo-java-driver</artifactId>
+            <version>3.3.0</version>
+        </dependency>
+
+        <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>18.0</version>
@@ -251,9 +257,6 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- Manage the version of all netty libraries included in netty-all. This prevents maven from pulling multiple netty versions
-                 onto the compile and test classpaths if transitive dependencies also use netty but declare specific dependencies, rather
-                 than using netty-all as we do. -->
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-all</artifactId>
@@ -319,14 +322,11 @@
                 <artifactId>netty-example</artifactId>
                 <version>${netty.version}</version>
             </dependency>
-
-            <!-- https://mvnrepository.com/artifact/org.mongodb/mongo-java-driver -->
             <dependency>
                 <groupId>org.mongodb</groupId>
                 <artifactId>mongo-java-driver</artifactId>
                 <version>3.3.0</version>
             </dependency>
-
         </dependencies>
     </dependencyManagement>
 

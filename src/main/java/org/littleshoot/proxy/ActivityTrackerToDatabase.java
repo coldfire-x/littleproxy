@@ -1,7 +1,11 @@
 package org.littleshoot.proxy;
 
+import com.mongodb.BasicDBObject;
+import com.mongodb.DBCollection;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
+import org.littleshoot.proxy.impl.ClientToProxyConnection;
+import org.littleshoot.proxy.impl.DefaultHttpProxyServer;
 
 import javax.net.ssl.SSLSession;
 import java.net.InetSocketAddress;
@@ -18,7 +22,11 @@ public class ActivityTrackerToDatabase implements ActivityTracker {
     @Override
     public void requestReceivedFromClient(FlowContext flowContext,
                                           HttpRequest httpRequest) {
-        System.out.println("in requestReceivedFromClient");
+        DefaultHttpProxyServer s = flowContext.getcTopConnection().getProxyServer();
+        DBCollection c = s.getMc();
+        BasicDBObject doc = new BasicDBObject("URI", httpRequest.getUri());
+        doc.append("method", httpRequest.getMethod().toString());
+        c.insert(doc);
     }
 
     @Override
